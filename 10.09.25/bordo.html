@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Cerchio con bordo e scelta colore silhouette</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  canvas { border: 1px solid #000; display:block; margin-top:20px; }
+  label { display:block; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<h2>Silhouette con bordo e scelta colore</h2>
+
+<label>Carica immagine: 
+  <input type="file" id="uploadImg" accept="image/*">
+</label>
+
+<label>Spessore bordo: 
+  <input type="range" id="borderSize" min="1" max="40" value="10">
+</label>
+
+<label>Soglia bianco/nero: 
+  <input type="range" id="threshold" min="0" max="255" value="128">
+</label>
+
+<label>Posizione X: 
+  <input type="range" id="posX" min="0" max="100" value="0">
+</label>
+
+<label>Posizione Y: 
+  <input type="range" id="posY" min="0" max="100" value="0">
+</label>
+
+<label><input type="checkbox" id="whiteSilhouette" checked> Silhouette bianca (deselezionato → nera)</label>
+
+<canvas id="myCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("myCanvas");
+const ctx = canvas.getContext("2d");
+
+const uploadImg = document.getElementById("uploadImg");
+const borderSize = document.getElementById("borderSize");
+const thresholdSlider = document.getElementById("threshold");
+const posXSlider = document.getElementById("posX");
+const posYSlider = document.getElementById("posY");
+const whiteSilhouetteCB = document.getElementById("whiteSilhouette");
+
+let imgOriginal = null;
+let imgProcessed = null;
+let margin = 50; // spazio extra per il bordo
+
+// funzione per applicare soglia e trasformare nero → bianco o nero
+function makeThreshold(img, threshold, isWhite, callback) {
+  const tmpCanvas = document.createElement("canvas");
+  const tctx = tmpCanvas.getContext("2d");
+  tmpCanvas.width = img.width;
+  tmpCanvas.height = img.height;
+
+  tctx.drawImage(img, 0, 0);
+  const imageData = tctx.getImageData(0, 0, img.width, img.height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const lum = 0.299*r + 0.587*g + 0.114*b;
+
+    if (lum < threshold) {
+      // pixel scuro → bianco o nero in base al checkbox
+      const val = isWhite ? 255 : 0;
+      data[i] = val;
+      data[i+1] = val;
+      data[i+2] = val;
+      data[i+3] = 255;
+    } else {
+      // pixel chiaro → trasparente
+      data[i + 3] = 0;
+    }
+  }
+
+  tctx.putImageData(imageData, 0, 0);
+
+  const newImg = new Image();
+  newImg.onload = () => callback(newImg);
+  newImg.src = tmpCanvas.toDataURL();
+}
+
+// disegna immagine con bordo nero e posizione
+function drawWithOutline() {
+  if (!imgProcessed) return;
+
+  const thickness = parseInt(borderSize.value);
+  const x = margin + parseInt(posXSlider.value);
+  const y = margin + parseInt(posYSlider.value);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+
+  // disegna immagine spostata per creare il bordo
+  for (let dx = -thickness; dx <= thickness; dx++) {
+    for (let dy = -thickness; dy <= thickness; dy++) {
+      if (dx*dx + dy*dy <= thickness*thickness) {
+        ctx.drawImage(imgProcessed, x + dx, y + dy);
+      }
+    }
+  }
+
+  // colore del bordo → nero
+  ctx.globalCompositeOperation = "source-in";
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // immagine interna → silhouette bianca o nera
+  ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(imgProcessed, x, y);
+
+  ctx.restore();
+}
+
+// applica soglia e ridisegna
+function processAndDraw() {
+  if (!imgOriginal) return;
+  makeThreshold(imgOriginal, parseInt(thresholdSlider.value), whiteSilhouetteCB.checked, (cleanImg) => {
+    imgProcessed = cleanImg;
+    drawWithOutline();
+  });
+}
+
+// gestione upload immagine
+uploadImg.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const temp = new Image();
+    temp.onload = () => {
+      imgOriginal = temp;
+
+      // calcolo canvas più grande dell'immagine + margine
+      const maxBorder = parseInt(borderSize.max);
+      margin = maxBorder + 20;
+      canvas.width = imgOriginal.width + 2*margin;
+      canvas.height = imgOriginal.height + 2*margin;
+
+      // aggiorno range X/Y
+      posXSlider.max = canvas.width - imgOriginal.width - margin;
+      posYSlider.max = canvas.height - imgOriginal.height - margin;
+
+      processAndDraw();
+    };
+    temp.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// aggiornamenti in tempo reale
+borderSize.addEventListener("input", drawWithOutline);
+thresholdSlider.addEventListener("input", processAndDraw);
+posXSlider.addEventListener("input", drawWithOutline);
+posYSlider.addEventListener("input", drawWithOutline);
+whiteSilhouetteCB.addEventListener("change", processAndDraw);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Canvas Text con Upload Font, Pennello, Undo/Redo e PNG</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  h2 { margin-bottom: 20px; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  fieldset {
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+  }
+
+  legend {
+    font-weight: bold;
+  }
+
+  label, select, input[type="text"], button {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+  }
+
+  @media (max-width: 768px) {
+    .controls {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  canvas { border: 1px solid #000; margin-top: 20px; display:block; cursor: crosshair; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+
+<h2>Canvas Text con Upload Font, Pennello, Undo/Redo e PNG</h2>
+
+<div class="controls">
+
+  <!-- Sezione Testo -->
+  <fieldset>
+    <legend>Testo</legend>
+    <label>X (orizzontale): <input type="range" id="sliderX" min="0" max="2000" value="50"></label>
+    <label>Y (verticale): <input type="range" id="sliderY" min="0" max="1200" value="100"></label>
+    <label>Font (dimensione): <input type="range" id="fontx" min="50" max="500" value="150"></label>
+    <label>Testo: <input type="text" id="litera" value="TESTO"></label>
+  </fieldset>
+
+  <!-- Sezione Contorni / Colori -->
+  <fieldset>
+    <legend>Contorni / Colori</legend>
+    <label>Spessore contorno nero: <input type="range" id="strokeBlack" min="1" max="100" value="20"></label>
+    <label>Spessore contorno bianco: <input type="range" id="strokeWhite" min="1" max="100" value="10"></label>
+    <label><input type="checkbox" id="fontColor" checked> Font Bianco (se deselezionato → Nero)</label>
+    <label><input type="checkbox" id="strokeWhiteColor" checked> Stroke Interno Bianco (se deselezionato → Nero)</label>
+    <label><input type="checkbox" id="strokeBlackColor"> Stroke Esterno Bianco (se deselezionato → Nero)</label>
+  </fieldset>
+
+  <!-- Sezione Pennello + Font / Azioni -->
+  <fieldset>
+    <legend>Pennello & Font</legend>
+    <label>Pennello (dimensione): <input type="range" id="brushSize" min="1" max="100" value="10"></label>
+    <label>Colore pennello:
+      <select id="brushColor">
+        <option value="black">Nero</option>
+        <option value="white">Bianco</option>
+      </select>
+    </label>
+    <label>Carica Font (OTF/TTF/WOFF): <input type="file" id="uploadFont" accept=".otf,.ttf,.woff,.woff2"></label>
+    <button id="downloadPNG">Scarica PNG</button>
+    <button id="undoBtn">Undo</button>
+    <button id="redoBtn">Redo</button>
+  </fieldset>
+
+</div>
+
+<canvas id="myCanvas" width="2000" height="1200"></canvas>
+
+<script>
+// canvas setup
+const canvas = document.getElementById("myCanvas");
+const ctx = canvas.getContext("2d");
+ctx.textBaseline = "top";
+ctx.lineJoin = "round";
+ctx.lineCap = "round";
+
+// elementi testo
+const sliderX = document.getElementById("sliderX");
+const sliderY = document.getElementById("sliderY");
+const inputText = document.getElementById("litera");
+const fontx = document.getElementById("fontx");
+const strokeBlack = document.getElementById("strokeBlack");
+const strokeWhite = document.getElementById("strokeWhite");
+const uploadFont = document.getElementById("uploadFont");
+
+// checkbox colori
+const fontColorCB = document.getElementById("fontColor");
+const strokeWhiteCB = document.getElementById("strokeWhiteColor");
+const strokeBlackCB = document.getElementById("strokeBlackColor");
+
+// pennello
+const brushSize = document.getElementById("brushSize");
+const brushColor = document.getElementById("brushColor");
+
+let currentFont = "sans-serif"; // font di default
+
+// undo / redo stacks
+let undoStack = [];
+let redoStack = [];
+
+// salva stato canvas nello stack undo
+function saveState() {
+    undoStack.push(canvas.toDataURL());
+    redoStack = []; // pulisce redo quando si fa una nuova azione
+}
+
+// funzione per ottenere posizione mouse corretta anche su canvas ridimensionato
+function getMousePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
+}
+
+// disegno testo
+function drawText(save = true) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const value = inputText.value;
+    const posX = parseInt(sliderX.value);
+    const posY = parseInt(sliderY.value);
+
+    ctx.font = fontx.value + "px '" + currentFont + "'";
+
+    // contorno esterno
+    ctx.lineWidth = parseInt(strokeBlack.value);
+    ctx.strokeStyle = strokeBlackCB.checked ? "white" : "black";
+    ctx.strokeText(value, posX, posY);
+
+    // contorno interno
+    ctx.lineWidth = parseInt(strokeWhite.value);
+    ctx.strokeStyle = strokeWhiteCB.checked ? "white" : "black";
+    ctx.strokeText(value, posX, posY);
+
+    // riempimento
+    ctx.fillStyle = fontColorCB.checked ? "white" : "black";
+    ctx.fillText(value, posX, posY);
+
+    if(save) saveState();
+}
+
+// eventi slider e input testo
+[sliderX, sliderY, inputText, fontx, strokeBlack, strokeWhite, fontColorCB, strokeWhiteCB, strokeBlackCB].forEach(el => {
+    el.addEventListener("input", () => drawText(true));
+});
+
+// upload font
+uploadFont.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const fontData = await file.arrayBuffer();
+    const fontName = file.name.replace(/\.[^/.]+$/, ""); // nome senza estensione
+
+    const font = new FontFace(fontName, fontData);
+    await font.load();
+    document.fonts.add(font);
+
+    currentFont = fontName;
+    drawText(true);
+});
+
+// download PNG
+document.getElementById("downloadPNG").addEventListener("click", function(){
+    const link = document.createElement("a");
+    link.download = "canvas.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+});
+
+// disegno pennello con offset corretto
+let drawing = false;
+
+canvas.addEventListener("mousedown", (e) => {
+    drawing = true;
+    const pos = getMousePos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+});
+
+canvas.addEventListener("mousemove", (e) => {
+    if (!drawing) return;
+    const pos = getMousePos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = brushColor.value;
+    ctx.lineWidth = parseInt(brushSize.value);
+    ctx.stroke();
+});
+
+canvas.addEventListener("mouseup", () => {
+    if(drawing) saveState();
+    drawing = false;
+});
+
+canvas.addEventListener("mouseout", () => {
+    if(drawing) saveState();
+    drawing = false;
+});
+
+// Undo / Redo
+document.getElementById("undoBtn").addEventListener("click", () => {
+    if(undoStack.length > 0) {
+        redoStack.push(canvas.toDataURL());
+        const imgData = undoStack.pop();
+        const img = new Image();
+        img.src = imgData;
+        img.onload = () => ctx.drawImage(img, 0, 0);
+    }
+});
+
+document.getElementById("redoBtn").addEventListener("click", () => {
+    if(redoStack.length > 0) {
+        undoStack.push(canvas.toDataURL());
+        const imgData = redoStack.pop();
+        const img = new Image();
+        img.src = imgData;
+        img.onload = () => ctx.drawImage(img, 0, 0);
+    }
+});
+
+// disegno iniziale
+drawText(true);
+</script>
+
+</body>
+</html>
